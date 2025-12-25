@@ -48,7 +48,7 @@ async function startTask(tool, region = "eu"){
 
 //upload file to api
 async function uploadFile(server, task, filePath, originalname){
-
+    const cleanServer = server.replace(/^https?:\/\//, "").trim();
     const form = new FormData();
     form.append("task", task);
     form.append("file", fs.createReadStream(filePath),{
@@ -59,7 +59,7 @@ async function uploadFile(server, task, filePath, originalname){
     
 
     const res = await axios.post(
-    `https://${server}/v1/upload`,
+    `https://${cleanServer}/v1/upload`,
     form,
     {
       headers: {
@@ -76,6 +76,7 @@ async function uploadFile(server, task, filePath, originalname){
 
 //merge function
 async function processMerge(server, task, files) {
+    const cleanServer = server.replace(/^https?:\/\//, "").trim();
   const payload = {
     task,
     tool: "merge",
@@ -87,7 +88,31 @@ async function processMerge(server, task, files) {
   };
 
   await axios.post(
-    `https://${server}/v1/process`,
+    `https://${cleanServer}/v1/process`,
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+      },
+    }
+  );
+}
+
+//compress function
+async function processCompress(server, task, file, compressionLevel = "recommended") {
+  const cleanServer = server.replace(/^https?:\/\//, "").trim();
+  const payload = {
+    task,
+    tool: "compress",
+    files: [{
+      server_filename: file.server_filename,
+      filename: file.originalname,
+    }],
+    compression_level: compressionLevel, 
+  };
+
+  await axios.post(
+    `https://${cleanServer}/v1/process`,
     payload,
     {
       headers: {
@@ -98,9 +123,10 @@ async function processMerge(server, task, files) {
 }
 
 //download function
-async function downloadFile(server, task, res) {
+async function downloadFile(server, task, res, outputFilename = "output.pdf") {
+  const cleanServer = server.replace(/^https?:\/\//, "").trim();  
   const response = await axios.get(
-    `https://${server}/v1/download/${task}`,
+    `https://${cleanServer}/v1/download/${task}`,
     {
       headers: {
         Authorization: `Bearer ${TOKEN}`,
@@ -111,7 +137,7 @@ async function downloadFile(server, task, res) {
 
   res.setHeader(
     "Content-Disposition",
-    "attachment; filename=merged.pdf"
+    `attachment; filename=${outputFilename}`
   );
 
   response.data.pipe(res);
@@ -131,7 +157,6 @@ app.post("/merge", upload.array("files", 10), async (req, res)=>{
         await authenticate();
 
         const {server, task} = await startTask("merge");
-        const cleanServer = server.replace(/^https?:\/\//, "").trim();
 
         const uploadedFiles = [];
 
@@ -150,11 +175,55 @@ app.post("/merge", upload.array("files", 10), async (req, res)=>{
         }
 
         await processMerge(server, task, uploadedFiles);
-        await downloadFile(server, task, res);
+        await downloadFile(server, task, res, "merged.pdf");
 
         uploadedFiles.forEach((f) => fs.unlinkSync(f.path));
     }catch(err){
         console.error(err.response?.data || err.message);
         res.status(500).json({ error: "PDF merge failed" });
+    }
+});
+
+app.post("/compress", upload.single("file"), async (req, res)=>{
+    try{
+        await authenticate();
+        const {server, task} = await startTask("compress");
+
+        const file = req.file;
+
+        if(!file){
+            return res.status(400).json({error: "No file uploaded"});
+        }
+
+        if(file.mimetype != "application/pdf"){
+            throw new Error("Only PDF files are allowed");
+        }
+
+        const maxSize = 15 * 1024 * 1024; 
+        if (file.size > maxSize) {
+            fs.unlinkSync(file.path); 
+            return res.status(400).json({ 
+                error: "File too large", 
+                message: "Maximum file size is 15 MB" 
+            });
+        }
+
+
+        const compServerFileName = await uploadFile(server, task, file.path, file.originalname);
+        
+        const uploadedFile = {
+            server_filename: compServerFileName,
+            originalname: file.originalname,
+            path: file.path
+        };
+
+        await processCompress(server, task, uploadedFile);
+        await downloadFile(server, task, res,`compressed_${file.originalname}`);
+        res.on('finish', () => {
+            fs.unlinkSync(file.path);
+        });
+    }catch(err){
+        console.error(err.response?.data || err.message);
+        res.status(500).json({error : "PDF compress failed "});
     }
 });
