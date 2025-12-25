@@ -210,7 +210,6 @@ app.post("/compress", upload.single("file"), async (req, res)=>{
 
 
         const compServerFileName = await uploadFile(server, task, file.path, file.originalname);
-        
         const uploadedFile = {
             server_filename: compServerFileName,
             originalname: file.originalname,
