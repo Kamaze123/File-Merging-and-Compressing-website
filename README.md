@@ -33,12 +33,3 @@ To set up this project locally, follow these steps:
 2. Use the interface to upload files for merging.
 3. Select the desired output format and compression settings.
 4. Download the processed file once the operation is complete.
-
-## Contributing
-Contributions are welcome! Please read the `CONTRIBUTING.md` file for details on how to get started.
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contact
-For any questions or feedback, please reach out to the project maintainer.
